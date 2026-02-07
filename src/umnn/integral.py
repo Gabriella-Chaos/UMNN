@@ -50,7 +50,8 @@ class UMNNNeuralIntegral(torch.autograd.Function):
             out = out_flat.view(B, S, OutD)
 
         # 4. Weighted Sum (Integral)
-        if is_triton_available() and x0.is_cuda:
+        # Avoid Triton for float64 as kernels are optimized for float32 accumulation
+        if is_triton_available() and x0.is_cuda and x0.dtype != torch.float64:
             weighted_sum = triton_weighted_sum(out, cc_weights)
         else:
             w = cc_weights.view(1, -1, 1)
@@ -112,7 +113,7 @@ class UMNNNeuralIntegral(torch.autograd.Function):
         interval_width = (x - x0) / 2.0
         grad_output_scaled = grad_output * interval_width
         
-        if is_triton_available() and x0.is_cuda:
+        if is_triton_available() and x0.is_cuda and x0.dtype != torch.float64:
             d_out = triton_backward_expansion(grad_output_scaled, cc_weights, out.shape)
         else:
             d_out = grad_output_scaled.unsqueeze(1) * cc_weights.view(1, -1, 1)

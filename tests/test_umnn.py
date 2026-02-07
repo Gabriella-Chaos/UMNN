@@ -41,6 +41,7 @@ class TestUMNNComprehensive(unittest.TestCase):
     def test_gradcheck(self):
         integrand = QuadraticIntegrand().to(self.device).double()
         nb_steps = 10
+        # Correctly initialize leaf tensors on device
         x = torch.tensor([[1.5], [0.5]], dtype=torch.double, device=self.device, requires_grad=True)
         x0 = torch.tensor([[0.0], [0.0]], dtype=torch.double, device=self.device, requires_grad=True)
         h = None
@@ -50,14 +51,15 @@ class TestUMNNComprehensive(unittest.TestCase):
         def func(x0_, x_, params_):
             return UMNNNeuralIntegral.apply(x0_, x_, integrand, params_, h, nb_steps)
         
+        # gradcheck will use float64, which now bypasses Triton to avoid compilation errors
         test = torch.autograd.gradcheck(func, (x0, x, flat_params), eps=1e-6, atol=1e-4)
         self.assertTrue(test)
 
     def test_context_dependence(self):
         model = MonotonicNN(context_dim=2, hidden_layers=[10], nb_steps=10).to(self.device)
-        x = torch.randn(5, 1).to(self.device)
-        h1 = torch.zeros(5, 2).to(self.device)
-        h2 = torch.ones(5, 2).to(self.device)
+        x = torch.randn(5, 1, device=self.device)
+        h1 = torch.zeros(5, 2, device=self.device)
+        h2 = torch.ones(5, 2, device=self.device)
         
         y1 = model(x, h1)
         y2 = model(x, h2)
@@ -67,8 +69,9 @@ class TestUMNNComprehensive(unittest.TestCase):
     def test_multidimensional_input(self):
         D = 4
         model = MonotonicNN(context_dim=2, hidden_layers=[10], nb_steps=5).to(self.device)
-        x = torch.randn(10, D, requires_grad=True).to(self.device)
-        h = torch.randn(10, 2, requires_grad=True).to(self.device)
+        # Correct initialization for leaf tensors
+        x = torch.randn(10, D, device=self.device, requires_grad=True)
+        h = torch.randn(10, 2, device=self.device, requires_grad=True)
         
         y = model(x, h)
         self.assertEqual(y.shape, (10, D))
@@ -82,8 +85,8 @@ class TestUMNNComprehensive(unittest.TestCase):
         """Test ParallelMonotonicNN with independent weights."""
         D = 3
         model = ParallelMonotonicNN(num_dims=D, context_dim=2, hidden_layers=[10]).to(self.device)
-        x = torch.randn(5, D).to(self.device)
-        h = torch.randn(5, 2).to(self.device)
+        x = torch.randn(5, D, device=self.device)
+        h = torch.randn(5, 2, device=self.device)
         
         y = model(x, h)
         self.assertEqual(y.shape, (5, D))
@@ -103,8 +106,8 @@ class TestUMNNComprehensive(unittest.TestCase):
         """Test GeneralizedUMNN (D -> 1)."""
         D = 4
         model = GeneralizedUMNN(num_dims=D, context_dim=2, hidden_layers=[10]).to(self.device)
-        x = torch.randn(5, D).to(self.device)
-        h = torch.randn(5, 2).to(self.device)
+        x = torch.randn(5, D, device=self.device, requires_grad=True)
+        h = torch.randn(5, 2, device=self.device, requires_grad=True)
         
         y = model(x, h)
         self.assertEqual(y.shape, (5, 1))
@@ -122,7 +125,31 @@ class TestUMNNComprehensive(unittest.TestCase):
 
     @pytest.mark.skipif(not is_triton_available(), reason="Triton not available")
     def test_triton_vs_torch_consistency(self):
-        pass
+        """
+        Check consistency between Triton and PyTorch implementations.
+        """
+        if self.device == "cpu":
+            return
+
+        integrand = QuadraticIntegrand().to(self.device)
+        nb_steps = 20
+        x = torch.tensor([[1.0], [2.0]], device=self.device)
+        x0 = torch.zeros_like(x)
+        h = None
+        flat_params = flatten_params(integrand.parameters())
+        
+        # By default (float32, cuda, triton avail) -> Triton
+        res_triton = UMNNNeuralIntegral.apply(x0, x, integrand, flat_params, h, nb_steps)
+        
+        # Force fallback by using double
+        x_d = x.double()
+        x0_d = x0.double()
+        integrand_d = QuadraticIntegrand().to(self.device).double()
+        flat_params_d = flatten_params(integrand_d.parameters())
+        
+        res_torch_d = UMNNNeuralIntegral.apply(x0_d, x_d, integrand_d, flat_params_d, h, nb_steps)
+        
+        self.assertTrue(torch.allclose(res_triton.double(), res_torch_d, atol=1e-5))
 
 if __name__ == '__main__':
     unittest.main()
