@@ -7,6 +7,9 @@ def compute_cc_weights(nb_steps, device="cpu"):
     """
     Computes Clenshaw-Curtis quadrature weights and steps.
     Cached to avoid recomputation for the same number of steps.
+    Returns:
+        cc_weights: (nb_steps + 1,)
+        steps: (nb_steps + 1,)
     """
     lam = torch.arange(0, nb_steps + 1, 1, device=device, dtype=torch.float32).reshape(-1, 1)
     lam = torch.cos((lam @ lam.T) * math.pi / nb_steps)
@@ -23,6 +26,8 @@ def compute_cc_weights(nb_steps, device="cpu"):
     W[mask] = 0
     
     cc_weights = torch.matmul(lam.T, W).view(-1)
-    steps = torch.cos(torch.arange(0, nb_steps + 1, 1, device=device, dtype=torch.float32).reshape(-1, 1) * math.pi / nb_steps)
+    
+    # Ensure steps is 1D
+    steps = torch.cos(torch.arange(0, nb_steps + 1, 1, device=device, dtype=torch.float32) * math.pi / nb_steps)
     
     return cc_weights, steps

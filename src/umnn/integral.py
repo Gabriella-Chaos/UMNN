@@ -21,14 +21,16 @@ class UMNNNeuralIntegral(torch.autograd.Function):
         steps = steps.to(dtype)
 
         # 2. Prepare inputs
-        # steps: (1, Steps, 1)
-        steps_expanded = steps.unsqueeze(0).unsqueeze(2) 
+        # steps: (Steps+1) -> (1, Steps+1, 1)
+        steps_expanded = steps.view(1, -1, 1)
         
-        # x0, x: (Batch, 1, Dim)
+        # x0, x: (Batch, Dim) -> (Batch, 1, Dim)
         x0_expanded = x0.unsqueeze(1)
         x_expanded = x.unsqueeze(1)
         
         # Linear interpolation
+        # (Batch, 1, Dim) + (Batch, 1, Dim) * (1, Steps, 1)
+        # Broadcasts to (Batch, Steps, Dim)
         diff = (x_expanded - x0_expanded) / 2.0
         X_steps = x0_expanded + diff * (steps_expanded + 1)
         
@@ -84,7 +86,7 @@ class UMNNNeuralIntegral(torch.autograd.Function):
         # 2. Gradients w.r.t parameters and h
         # Recompute inputs
         with torch.no_grad():
-            steps_expanded = steps.unsqueeze(0).unsqueeze(2) 
+            steps_expanded = steps.view(1, -1, 1)
             x0_expanded = x0.unsqueeze(1)
             x_expanded = x.unsqueeze(1)
             diff = (x_expanded - x0_expanded) / 2.0
@@ -118,7 +120,6 @@ class UMNNNeuralIntegral(torch.autograd.Function):
             d_out = grad_output_scaled.unsqueeze(1) * cc_weights.view(1, -1, 1)
             
         # Compute gradients using autograd.grad to avoid accumulating into .grad directly
-        # which would cause double counting if we also return the gradients to the Function.
         
         inputs_to_grad = list(integrand.parameters())
         if h_expanded is not None and h.requires_grad:
