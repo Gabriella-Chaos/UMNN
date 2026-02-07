@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Unified Monotonic Neural Networks with Triton optimization"
 readme = "README.md"
 authors = [
-  { name = "Gemini Agent", email = "agent@example.com" },
+  { name = "Gabriella Chaos", email = "gabriella-chaos@users.noreply.github.com" },
 ]
 license = { file = "LICENSE" }
 classifiers = [
@@ -25,6 +25,7 @@ keywords = ["deep-learning", "pytorch", "monotonic-networks", "triton", "normali
 dependencies = [
     "torch>=2.0.0",
     "numpy",
+    "triton; platform_system=='Linux'",
 ]
 requires-python = ">=3.8"
 
@@ -36,14 +37,11 @@ dev = [
     "isort",
     "flake8",
 ]
-gpu = [
-    "triton; platform_system=='Linux'",
-]
 
 [project.urls]
-Homepage = "https://github.com/your-repo/umnn"
-Repository = "https://github.com/your-repo/umnn.git"
-"Bug Tracker" = "https://github.com/your-repo/umnn/issues"
+Homepage = "https://github.com/Gabriella-Chaos/UMNN"
+Repository = "https://github.com/Gabriella-Chaos/UMNN.git"
+"Bug Tracker" = "https://github.com/Gabriella-Chaos/UMNN/issues"
 
 [tool.setuptools.packages.find]
 where = ["src"]
