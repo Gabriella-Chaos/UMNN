@@ -29,8 +29,6 @@ class UMNNNeuralIntegral(torch.autograd.Function):
         x_expanded = x.unsqueeze(1)
         
         # Linear interpolation
-        # (Batch, 1, Dim) + (Batch, 1, Dim) * (1, Steps, 1)
-        # Broadcasts to (Batch, Steps, Dim)
         diff = (x_expanded - x0_expanded) / 2.0
         X_steps = x0_expanded + diff * (steps_expanded + 1)
         
@@ -119,26 +117,44 @@ class UMNNNeuralIntegral(torch.autograd.Function):
         else:
             d_out = grad_output_scaled.unsqueeze(1) * cc_weights.view(1, -1, 1)
             
-        # Compute gradients using autograd.grad to avoid accumulating into .grad directly
+        # Compute gradients using autograd.grad
         
-        inputs_to_grad = list(integrand.parameters())
-        if h_expanded is not None and h.requires_grad:
-            inputs_to_grad.append(h_expanded)
+        # If out_flat doesn't require grad (e.g. integrand ignored params and input detached), 
+        # we can't use autograd.grad.
+        if not out_flat.requires_grad:
+            grad_flat_params = torch.zeros_like(flatten_params(integrand.parameters()))
+            grad_h = torch.zeros_like(h) if (h is not None and h.requires_grad) else None
+        else:
+            inputs_to_grad = list(integrand.parameters())
+            if h_expanded is not None and h.requires_grad:
+                inputs_to_grad.append(h_expanded)
+                
+            d_out_flat = d_out.reshape(-1, out.shape[2])
             
-        d_out_flat = d_out.reshape(-1, out.shape[2])
-        
-        # Run backward
-        gradients = torch.autograd.grad(out_flat, inputs_to_grad, grad_outputs=d_out_flat)
-        
-        # Extract parameter grads
-        num_params = len(list(integrand.parameters()))
-        param_grads = gradients[:num_params]
-        grad_flat_params = flatten_params(param_grads)
-        
-        # Extract h grad
-        grad_h = None
-        if h_expanded is not None and h.requires_grad:
-            grad_h_expanded = gradients[-1]
-            grad_h = grad_h_expanded.view(B, S, -1).sum(dim=1)
+            # allow_unused=True handles cases where some params might be ignored
+            gradients = torch.autograd.grad(out_flat, inputs_to_grad, grad_outputs=d_out_flat, allow_unused=True)
+            
+            # Extract parameter grads
+            num_params = len(list(integrand.parameters()))
+            param_grads = gradients[:num_params]
+            
+            # Handle None in param_grads if allow_unused returned None
+            clean_param_grads = []
+            for g, p in zip(param_grads, integrand.parameters()):
+                if g is None:
+                    clean_param_grads.append(torch.zeros_like(p))
+                else:
+                    clean_param_grads.append(g)
+            
+            grad_flat_params = flatten_params(clean_param_grads)
+            
+            # Extract h grad
+            grad_h = None
+            if h_expanded is not None and h.requires_grad:
+                grad_h_expanded = gradients[-1]
+                if grad_h_expanded is not None:
+                    grad_h = grad_h_expanded.view(B, S, -1).sum(dim=1)
+                else:
+                    grad_h = torch.zeros_like(h)
         
         return grad_x0, grad_x, None, grad_flat_params, grad_h, None
